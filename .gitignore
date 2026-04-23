@@ -1,0 +1,32 @@
+# Build directories
+build/
+build_win/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Compiled
+*.exe
+*.dll
+*.obj
+*.o
+*.a
+*.lib
+*.pdb
+
+# SDL2 bundled libs (large, downloadable)
+libs/SDL2_win/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Original GTA2 reference copy (not for distribution)
+gta2copy/
+
+# Claude
+.claude/

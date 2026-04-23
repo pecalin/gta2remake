@@ -1,0 +1,362 @@
+ Here is Claude's plan:
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ GTA2-Style 2D Top-Down Game — Build Plan
+
+ Context
+
+ Recreate GTA2's core gameplay from scratch as a standalone Windows 10/11 game. The original GTA2 copy in gta2copy/
+  serves as reference for game mechanics, vehicle physics parameters (from data/nyc.gci — 80+ vehicles with mass,
+ thrust, turn_ratio, gear ratios, etc.), and overall feel. We are NOT porting or modding — we are building a new
+ game inspired by GTA2.
+
+ Scope: 1 city, core gameplay (driving, shooting, police, a few missions). Gangs and radio are stretch goals.
+ Art approach: Start with colored rectangles/shapes for all visuals. Replace with pixel art later.
+
+ ---
+ Technology Stack
+
+ - Language: C++ (C++17)
+ - Graphics/Audio/Input: SDL2 + SDL2_image + SDL2_mixer + SDL2_ttf
+ - Build: CMake + MinGW-w64 (produces standalone .exe with SDL2 DLLs)
+ - Map Editor: Tiled (free, exports JSON)
+ - Data Format: JSON via nlohmann/json (single-header)
+
+ ---
+ Project Structure
+
+ gta2/
+ ├── CMakeLists.txt
+ ├── assets/
+ │   ├── maps/               # Tiled JSON map exports
+ │   └── data/
+ │       ├── vehicles.json   # vehicle physics params (ported from nyc.gci)
+ │       ├── weapons.json    # weapon stats
+ │       └── missions/       # per-mission JSON files
+ ├── src/
+ │   ├── main.cpp
+ │   ├── core/
+ │   │   ├── game.h/cpp              # game loop, owns all systems
+ │   │   ├── window.h/cpp            # SDL window + renderer
+ │   │   ├── input.h/cpp             # keyboard → abstract actions
+ │   │   ├── audio.h/cpp             # SDL_mixer wrapper
+ │   │   ├── camera.h/cpp            # follow target, zoom, shake
+ │   │   └── timer.h/cpp             # fixed timestep (60Hz)
+ │   ├── entities/
+ │   │   ├── entity.h/cpp            # base: position, velocity, angle, bbox
+ │   │   ├── player.h/cpp            # wanted level, money, score, lives
+ │   │   ├── pedestrian.h/cpp        # civilian with AI
+ │   │   ├── vehicle.h/cpp           # vehicle with GCI physics
+ │   │   ├── projectile.h/cpp        # bullets, rockets, grenades
+ │   │   ├── pickup.h/cpp            # collectibles
+ │   │   └── explosion.h/cpp         # damage radius + visual
+ │   ├── world/
+ │   │   ├── map.h/cpp               # tile map (Tiled JSON) loading + rendering
+ │   │   ├── tile.h/cpp              # tile types, properties
+ │   │   ├── collision_grid.h/cpp    # spatial hash for broad-phase
+ │   │   ├── traffic_manager.h/cpp   # spawn/manage AI traffic
+ │   │   └── spawn_manager.h/cpp     # spawn peds, pickups
+ │   ├── physics/
+ │   │   ├── vehicle_physics.h/cpp   # arcade physics (thrust, drift, gears)
+ │   │   └── collision.h/cpp         # AABB + SAT detection + response
+ │   ├── systems/
+ │   │   ├── weapon_system.h/cpp     # weapon types, firing, ammo
+ │   │   ├── wanted_system.h/cpp     # police wanted level (1-6 stars)
+ │   │   ├── mission_system.h/cpp    # data-driven missions
+ │   │   └── score_system.h/cpp      # money, score multipliers
+ │   ├── ai/
+ │   │   ├── pedestrian_ai.h/cpp     # IDLE→WANDER→FLEE state machine
+ │   │   ├── traffic_ai.h/cpp        # follow road graph
+ │   │   └── police_ai.h/cpp         # pursuit by wanted level
+ │   ├── ui/
+ │   │   ├── hud.h/cpp               # health, wanted, weapon, score
+ │   │   └── menu.h/cpp              # main menu, pause
+ │   └── util/
+ │       ├── math_utils.h            # Vec2, angle helpers, lerp
+ │       └── config.h/cpp            # settings
+ └── libs/
+     ├── SDL2/                       # SDL2 dev libs (Windows)
+     └── nlohmann/json.hpp
+
+ ---
+ Core Architecture
+
+ Game Loop — Fixed Timestep (60Hz)
+
+ while running:
+     accumulator += elapsed_time
+     while accumulator >= 1/60s:
+         process_input()
+         update(dt=1/60)
+         accumulator -= 1/60s
+     render()
+
+ Entity Hierarchy
+
+ Entity (base: position, velocity, angle, width, height, color)
+ ├── Character (health, armor, current_weapon, state)
+ │   ├── Player (wanted_level, money, score, lives)
+ │   ├── Pedestrian (ai_state, wander_target, fear_level)
+ │   └── PoliceOfficer (pursuit_target, response_tier)
+ ├── Vehicle (vehicle_params, damage, occupants[], gear, on_fire)
+ ├── Projectile (weapon_type, damage, lifetime, owner)
+ ├── Pickup (type, respawn_timer, value)
+ └── Explosion (radius, damage, timer)
+
+ Collision — Spatial Hash Grid
+
+ - World divided into 128x128px cells
+ - Broad phase: AABB. Narrow phase: SAT for rotated vehicles
+ - Layers: Vehicle↔Building, Vehicle↔Vehicle, Vehicle↔Ped, Bullet↔Character, Bullet↔Vehicle, Character↔Pickup
+
+ Rendering Order (back to front)
+
+ 1. Ground tiles (roads, grass, water) — colored rectangles initially
+ 2. Road markings
+ 3. Shadows (dark ellipses under entities)
+ 4. Ground entities sorted by Y (peds, pickups)
+ 5. Vehicles sorted by Y — colored rectangles with direction indicator
+ 6. Building wall side-faces (darker rectangles for pseudo-3D)
+ 7. Building rooftops (colored rectangles)
+ 8. Effects (explosions, particles — colored circles/dots)
+ 9. HUD overlay (text + bars + icons, all rendered with SDL primitives)
+
+ Pseudo-3D Buildings
+
+ - Each tile has height 0-3
+ - Tall tile adjacent to shorter tile → draw darkened rectangle on south/east edge
+ - Wall strip height = (tall - short) * 16px
+ - Pre-compute edges at map load
+
+ ---
+ Vehicle Physics Model
+
+ Port GCI parameters directly. Per vehicle:
+ mass, front_drive_bias, brake_friction, turn_in, turn_ratio,
+ rear_end_stability, handbrake_slide, thrust, max_speed,
+ skid_threshold, gear1/2/3_mult, gear2/3_speed
+
+ Update each frame:
+ 1. Gear selection from speed thresholds → gear multiplier on thrust
+ 2. Thrust along forward vector
+ 3. Steering: angle += steer * turn_ratio * turn_in / (1 + speed*2) — tighter at low speed
+ 4. Decompose velocity → forward + lateral
+ 5. Kill lateral velocity by rear_end_stability (handbrake reduces → drift)
+ 6. Brake friction when braking
+ 7. Rolling friction decay
+ 8. Speed cap at max_speed
+ 9. Skid detection: |lateral| > skid_threshold
+ 10. Mass-based collision impulse
+
+ Reference: gta2copy/data/nyc.gci — start with 10 vehicle types (sedan, sports, truck, bus, cop car, taxi, van,
+ muscle, compact, pickup truck)
+
+ ---
+ AI Systems
+
+ Pedestrian AI (State Machine)
+
+ - IDLE → stand 1-3s → WANDER
+ - WANDER → pick random sidewalk tile nearby, walk to it
+ - FLEE → triggered by gunshots/explosions/vehicles → run away 2x speed
+ - DEAD → corpse 10s → despawn
+ - SpawnManager: ~20-30 peds around player
+
+ Traffic AI
+
+ - Road graph: nodes at intersections, directed edges along roads (defined in Tiled object layer)
+ - Follow waypoints, brief stops at intersections
+ - Forward ray to avoid rear-ending
+ - ~10-15 vehicles near player
+
+ Police AI (by wanted level)
+
+ ┌───────┬──────────────────────────┐
+ │ Level │         Response         │
+ ├───────┼──────────────────────────┤
+ │ 1     │ 1 cop on foot            │
+ ├───────┼──────────────────────────┤
+ │ 2     │ 1-2 cop cars             │
+ ├───────┼──────────────────────────┤
+ │ 3     │ 3-4 cop cars, they shoot │
+ ├───────┼──────────────────────────┤
+ │ 4     │ SWAT vans                │
+ ├───────┼──────────────────────────┤
+ │ 5     │ FBI cars                 │
+ ├───────┼──────────────────────────┤
+ │ 6     │ Army, roadblocks         │
+ └───────┴──────────────────────────┘
+
+ - Pursue → pathfind on road graph, direct chase within 10 tiles
+ - Decay wanted level when unseen 15-30s
+ - Busted → lose weapons, respawn at police station
+
+ ---
+ Mission System (Data-Driven JSON)
+
+ {
+   "id": "mission_1",
+   "briefing": "Steal the van and deliver it to the docks.",
+   "objectives": [
+     {"type": "go_to", "target": [80, 90], "radius": 3},
+     {"type": "enter_vehicle", "vehicle_model": 4},
+     {"type": "drive_to", "target": [200, 50], "radius": 5}
+   ],
+   "reward": {"money": 25000},
+   "time_limit": 180,
+   "fail_conditions": ["player_death", "busted", "timeout"]
+ }
+
+ Objective types: go_to, kill_target, enter_vehicle, drive_to, collect, survive_time
+
+ ---
+ Implementation Phases
+
+ Phase 1: Engine Foundation
+
+ Goal: Player walks around a colored-rectangle city, camera follows
+ - CMake project, link SDL2
+ - SDL window (1280x720), SDL_Renderer, vsync
+ - Fixed timestep game loop (60Hz)
+ - Input system (WASD → movement actions)
+ - Camera following player with smooth lerp
+ - Tile map: hardcoded 2D array of tile types (road=gray, building=brown, grass=green, water=blue, sidewalk=light
+ gray)
+ - Render tiles as colored SDL_FillRect calls
+ - Player: small colored rectangle, 8-direction movement
+ - AABB collision vs. solid tiles
+ - Test map: ~50x50 tiles with roads, buildings, open areas
+
+ Files to create: main.cpp, core/game, core/window, core/input, core/camera, core/timer, entities/entity,
+ entities/player, world/map, world/tile, util/math_utils
+
+ Phase 2: Vehicle System
+
+ Goal: Player enters/exits vehicles, drives with GTA2-feel physics
+ - Vehicle entity: colored rectangle with rotation (SDL_RenderCopyEx)
+ - Direction indicator line on vehicle rectangle
+ - Port GCI physics: thrust, steering, gears, drift, handbrake
+ - Enter/exit vehicle (F key when near vehicle)
+ - Input context switch (on-foot ↔ in-vehicle)
+ - Vehicle-building collision (bounce off)
+ - Vehicle-vehicle collision (mass-based push)
+ - Spatial hash grid for collision broad-phase
+ - Parse vehicles.json for 10 vehicle types
+ - Place 10-15 parked vehicles on map (different types, random positions on roads)
+
+ Files to create: entities/vehicle, physics/vehicle_physics, physics/collision, world/collision_grid
+
+ Phase 3: Weapons and Combat
+
+ Goal: Player shoots, things explode, vehicles get destroyed
+ - Weapon system: pistol (hitscan), machine gun (rapid hitscan), rocket (projectile→explosion)
+ - Projectile entity (small colored dot/line moving fast)
+ - Explosion entity (expanding colored circle, damage in radius)
+ - Vehicle damage: HP bar, catch fire at low HP (flickering color), explode after 5s
+ - Character damage: health/armor system
+ - Weapon pickups: colored squares on ground, different color per weapon
+ - Basic particle system: colored dots for sparks, blood, debris
+ - HUD: health bar (red), armor bar (blue), weapon name + ammo (text), score
+
+ Files to create: systems/weapon_system, entities/projectile, entities/explosion, entities/pickup, ui/hud
+
+ Phase 4: Pedestrians and Traffic
+
+ Goal: City feels alive with walking people and driving cars
+ - Pedestrian AI: IDLE/WANDER/FLEE states (small colored rectangles walking on sidewalks)
+ - Spawn manager: maintain ~20 peds near player, despawn when far
+ - Simple pathfinding: walk toward random sidewalk tile (no A* yet — just direct movement avoiding buildings)
+ - Peds flee from gunfire/explosions/fast vehicles
+ - Run over peds with vehicles (they die, trigger wanted level)
+ - Traffic AI: vehicles follow simple road paths
+ - Traffic manager: ~10 AI vehicles near player
+ - Road waypoint graph defined in map data
+
+ Files to create: entities/pedestrian, ai/pedestrian_ai, ai/traffic_ai, world/traffic_manager, world/spawn_manager
+
+ Phase 5: Police and Wanted System
+
+ Goal: Crime has consequences
+ - Wanted system: 6 levels, accumulate from crimes
+ - Crime triggers: kill ped (+1), kill cop (+2), destroy vehicle (+1), shoot near cops (+1)
+ - Police officer entity (blue colored rectangle)
+ - Police AI: PATROL → PURSUE → SEARCH
+ - Level 1-2: cops on foot/in cars chase
+ - Level 3+: cops shoot back
+ - Wanted decay when out of sight (15-30s per level)
+ - Busted: lose weapons, respawn at map center
+ - Cop bribe pickup (green square — clears wanted level)
+ - HUD: wanted stars display
+
+ Files to create: systems/wanted_system, ai/police_ai
+
+ Phase 6: Missions
+
+ Goal: Player can accept and complete objectives for rewards
+ - Mission system: load missions from JSON
+ - Mission trigger zones on map (flashing colored square = phone)
+ - Walk into trigger → accept mission → show briefing text
+ - Objective tracking: go_to (arrow indicator), kill_target, drive_to
+ - Mission completion: money reward, display "MISSION COMPLETE"
+ - Mission failure: timeout / death / busted
+ - HUD: mission text at top, objective marker arrow, timer
+ - Create 5 missions (delivery, assassination, timed drive, collection, survival)
+
+ Files to create: systems/mission_system, systems/score_system
+
+ Phase 7: Menus, Save, Polish
+
+ Goal: Complete playable game
+ - Main menu: New Game / Continue / Quit (simple text menu with colored background)
+ - Pause menu (ESC)
+ - Save/load: serialize player state + mission progress to JSON file
+ - Game over screen (all lives lost)
+ - Minimap: small top-corner rectangle showing scaled-down map + player dot
+ - Screen shake on explosions
+ - Skid marks on road (colored lines where vehicle drifted)
+ - Audio: engine hum, gunshots, explosions, tire screech (SDL_mixer)
+ - Wasted/Busted text overlay
+ - Score multiplier system
+
+ Files to create: ui/menu, core/audio, util/config
+
+ ---
+ Verification Plan
+
+ After each phase, verify by running the game:
+
+ ┌───────┬────────────────────────────────────────────────────────────────────────────────────────┐
+ │ Phase │                                          Test                                          │
+ ├───────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 1     │ Walk around, bump into buildings, camera follows smoothly                              │
+ ├───────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 2     │ Enter car with F, drive with arrows, drift with handbrake, crash into walls/cars       │
+ ├───────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 3     │ Pick up weapon, shoot, blow up a car, see explosion + particles, HUD shows health/ammo │
+ ├───────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 4     │ See 20+ peds walking on sidewalks, 10+ cars driving on roads, run over a ped           │
+ ├───────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 5     │ Kill a ped → 1 star → cop chases → escape or get busted, find cop bribe to clear       │
+ ├───────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 6     │ Walk to mission phone → accept → complete objectives → get money                       │
+ ├───────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 7     │ Main menu → New Game → play → ESC pause → save → quit → Continue → load                │
+ └───────┴────────────────────────────────────────────────────────────────────────────────────────┘
+
+ Performance target: 60fps with 30 peds + 15 vehicles + particles on screen.
+
+ ---
+ Key Reference Files
+
+ ┌──────────────────────────────────┬────────────────────────────────────────────────────────────────┐
+ │               File               │                            Purpose                             │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────────┤
+ │ gta2copy/data/nyc.gci            │ Vehicle physics params to port (mass, thrust, handling, gears) │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────────┤
+ │ gta2copy/data/test1.seq          │ Campaign structure reference                                   │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────────┤
+ │ gta2copy/gta2_install.reg        │ Control bindings reference                                     │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────────┤
+ │ gta2copy/data/audio/Vocals/*.wav │ Voice line names (wasted, busted, etc.)                        │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────────┤
+ │ gta2copy/gta2-changelog.txt      │ Architecture hints (coordinate system, angle conventions)      │
+ └──────────────────────────────────┴────────────────────────────────────────────────────────────────┘
