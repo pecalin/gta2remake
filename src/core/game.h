@@ -12,6 +12,7 @@
 #include "systems/wanted_system.h"
 #include "ai/police_ai.h"
 #include "ui/menu.h"
+#include "core/sprite.h"
 #include <vector>
 #include <memory>
 
@@ -27,6 +28,7 @@ private:
     void render();
     void spawn_vehicles();
     void handle_weapon_switch();
+    float get_aim_angle();  // returns aim angle in radians
     void check_pickup_collisions();
     void check_projectile_hits();
     void check_vehicle_ped_collisions();
@@ -39,6 +41,7 @@ private:
 
     void save_game();
     void load_game();
+    void load_sprites();
 
     Window window_;
     Input input_;
@@ -52,6 +55,7 @@ private:
     WantedSystem wanted_system_;
     PoliceAI police_ai_;
     Menu menu_;
+    SpriteManager sprites_;
 
     std::vector<std::unique_ptr<Vehicle>> vehicles_;
     Vehicle* current_vehicle_ = nullptr;
@@ -63,6 +67,10 @@ private:
 
     // Respawn point
     Vec2 respawn_point_ = {0, 0};
+
+    // Aiming
+    bool use_mouse_aim_ = false;  // switches to true when mouse moves
+    float aim_angle_ = 0.0f;
 
     bool running_ = false;
     bool paused_ = false;

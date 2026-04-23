@@ -1,6 +1,7 @@
 #include "entities/player.h"
 #include "world/map.h"
 #include "core/camera.h"
+#include "core/sprite.h"
 #include <cmath>
 #include <algorithm>
 
@@ -23,6 +24,14 @@ void Player::handle_input(const Input& input, float dt) {
         move_dir = move_dir.normalized();
         vel_ = move_dir * move_speed_ * speed_mult_;
         angle_ = std::atan2(move_dir.y, move_dir.x);
+
+        // Update facing direction for sprite animation
+        // 0=down, 1=left, 2=right, 3=up
+        if (std::abs(move_dir.x) > std::abs(move_dir.y)) {
+            facing_dir_ = (move_dir.x < 0) ? 1 : 2;
+        } else {
+            facing_dir_ = (move_dir.y < 0) ? 3 : 0;
+        }
     } else {
         vel_ = {0, 0};
     }
@@ -30,6 +39,7 @@ void Player::handle_input(const Input& input, float dt) {
 
 void Player::update(float dt) {
     if (in_vehicle_ || wasted_ || busted_) return;
+    anim_time_ += dt;
     pos_ += vel_ * dt;
 }
 
@@ -150,4 +160,21 @@ void Player::render(SDL_Renderer* renderer, const Camera& camera) const {
     SDL_RenderDrawLine(renderer,
         static_cast<int>(screen.x), static_cast<int>(screen.y),
         lx, ly);
+}
+
+void Player::render_sprite(SpriteManager& sprites, const Camera& camera) const {
+    if (!active_ || in_vehicle_) return;
+
+    Vec2 screen = camera.world_to_screen(pos_);
+
+    // Death animation
+    if (wasted_ || health_ <= 0) {
+        sprites.draw_character_death("player", screen, wasted_timer_ > 0 ? (3.0f - wasted_timer_) : 1.0f, 0.5f);
+        return;
+    }
+
+    bool moving = vel_.length_sq() > 1.0f;
+
+    // Player always uses run animation when moving
+    sprites.draw_character("player", screen, facing_dir_, anim_time_, moving, 0.5f, true);
 }

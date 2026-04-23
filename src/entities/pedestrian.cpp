@@ -1,6 +1,7 @@
 #include "entities/pedestrian.h"
 #include "world/map.h"
 #include "core/camera.h"
+#include "core/sprite.h"
 #include <cstdlib>
 #include <cmath>
 
@@ -21,11 +22,22 @@ Pedestrian::Pedestrian() {
 void Pedestrian::update(float dt) {
     if (!active_) return;
 
+    anim_time_ += dt;
+
     switch (state_) {
         case PedState::IDLE:   update_idle(dt);   break;
         case PedState::WANDER: update_wander(dt); break;
         case PedState::FLEE:   update_flee(dt);   break;
         case PedState::DEAD:   update_dead(dt);   break;
+    }
+
+    // Update facing direction from velocity
+    if (vel_.length_sq() > 1.0f) {
+        if (std::abs(vel_.x) > std::abs(vel_.y)) {
+            facing_dir_ = (vel_.x < 0) ? 1 : 2;
+        } else {
+            facing_dir_ = (vel_.y < 0) ? 3 : 0;
+        }
     }
 }
 
@@ -90,6 +102,7 @@ void Pedestrian::update_flee(float dt) {
 
 void Pedestrian::update_dead(float dt) {
     vel_ = {0, 0};
+    death_anim_time_ += dt;
     corpse_timer_ -= dt;
     if (corpse_timer_ <= 0.0f) {
         active_ = false;
@@ -136,7 +149,8 @@ void Pedestrian::kill() {
     state_ = PedState::DEAD;
     health_ = 0;
     corpse_timer_ = 10.0f;
-    color_ = {150, 30, 30, 200}; // dark red corpse
+    death_anim_time_ = 0.0f;
+    color_ = {150, 30, 30, 200};
 }
 
 void Pedestrian::take_damage(int amount) {
@@ -197,4 +211,20 @@ void Pedestrian::render(SDL_Renderer* renderer, const Camera& camera) const {
         4, 4
     };
     SDL_RenderFillRect(renderer, &head);
+}
+
+void Pedestrian::render_sprite(SpriteManager& sprites, const Camera& camera) const {
+    if (!active_) return;
+
+    Vec2 screen = camera.world_to_screen(pos_);
+
+    if (state_ == PedState::DEAD) {
+        sprites.draw_character_death("civilian", screen, death_anim_time_, 0.4f);
+        return;
+    }
+
+    bool moving = vel_.length_sq() > 1.0f;
+    bool running = (state_ == PedState::FLEE);  // run when fleeing, walk otherwise
+
+    sprites.draw_character("civilian", screen, facing_dir_, anim_time_, moving, 0.4f, running);
 }

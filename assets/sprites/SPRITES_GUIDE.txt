@@ -1,0 +1,75 @@
+# Sprite Guide
+# Place PNG files in these folders. Missing files are fine — the game
+# falls back to colored rectangles for anything not found.
+
+## CHARACTER SPRITES (assets/sprites/characters/)
+
+Expected files:
+  player.png    - player character
+  civilian.png  - generic NPC pedestrian
+  cop.png       - police officer
+
+Format: LPC Spritesheet (from https://liberatedpixelcup.github.io/Universal-LPC-Spritesheet-Character-Generator)
+  - PNG with walk animation rows
+  - Default LPC layout: 64x64 pixels per frame, 9 frames per row
+  - Row 0 = walking UP
+  - Row 1 = walking LEFT
+  - Row 2 = walking DOWN
+  - Row 3 = walking RIGHT
+
+If your spritesheet has different row order or frame count, edit the
+load_character() calls in src/core/game.cpp (Game::load_sprites).
+
+How to get a character sprite:
+  1. Go to https://liberatedpixelcup.github.io/Universal-LPC-Spritesheet-Character-Generator
+  2. Customize your character appearance
+  3. Click "Download" to get the PNG spritesheet
+  4. Save as player.png in this folder
+  5. The game only uses the WALK animation rows (first 4 rows, 9 frames each)
+
+
+## VEHICLE SPRITES (assets/sprites/vehicles/)
+
+Expected files:
+  romero.png     - Romero (sedan)
+  wellard.png    - Wellard (sports car)
+  boxtruck.png   - Box Truck
+  bus.png         - Bus
+  copcar.png     - Cop Car
+  taxi.png       - Taxi
+  bankvan.png    - Bank Van
+  beamer.png     - Beamer (muscle car)
+  bug.png        - Bug (compact)
+  pacifier.png   - Pacifier (pickup truck)
+
+Format - Option A (RECOMMENDED - simplest):
+  Single top-down image of the car facing UP (north).
+  The game will rotate it automatically using SDL.
+  Suggested sizes:
+    Sedans/sports:  48 x 80 pixels
+    Vans/trucks:    50 x 88 pixels
+    Large (bus):    52 x 110 pixels
+    Small (bug):    40 x 64 pixels
+  Use transparent background (PNG with alpha).
+
+Format - Option B (smoother rotation):
+  Pre-rotated spritesheet: single horizontal row of N rotation frames.
+  Frame 0 = facing RIGHT (east), going clockwise.
+  Common: 16 or 32 angles.
+  To use this format, edit load_vehicle() in game.cpp:
+    Change last parameter from 1 to your angle count (e.g. 32)
+    Adjust frame_w and frame_h to match each frame's size.
+
+Tips for drawing car sprites:
+  - Draw the car facing UP (roof at top, hood at bottom for Option A)
+  - Include wheels, windows, hood, trunk details
+  - Use distinct colors per vehicle type
+  - Cop car should have light bar on roof
+  - Taxi should be yellow
+  - Add a 1-2px dark outline for clarity
+  - Transparent background is important!
+
+Free car sprite resources:
+  - OpenGameArt.org: search "top down car" or "top down vehicle"
+  - itch.io: search "top down car sprites"
+  - Kenney.nl: free game assets including vehicles

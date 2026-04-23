@@ -1,6 +1,9 @@
 #include "physics/vehicle_physics.h"
 #include <cmath>
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
+#include <string>
 
 // Scale factor: GCI values are normalized (0-1 range for speeds).
 // We multiply by this to get pixel/second values.
@@ -43,15 +46,31 @@ void VehiclePhysics::update(VehicleState& state, const VehicleParams& params,
 
     state.velocity += forward * thrust_force * dt;
 
-    // Steering
-    float speed_factor = clamp(speed / (params.max_speed * SPEED_SCALE * 0.5f), 0.0f, 1.0f);
+    // Steering with speed-dependent curve:
+    // - Below min_steer_speed: steering scales up linearly (no tank spinning)
+    // - At mid speed: full steering
+    // - At high speed: steering reduces (wider turning radius)
+    float max_px_speed = params.max_speed * SPEED_SCALE;
+    float min_steer_speed = 30.0f;   // px/s - below this, steering fades out
+    float peak_steer_speed = max_px_speed * 0.2f;  // full steering at ~20% of max speed
+
     float turn_amount = steer_input * params.turn_ratio * TURN_SCALE;
 
-    // Reduce turning at high speed (but keep it responsive)
-    turn_amount /= (1.0f + speed_factor * 1.2f);
+    if (speed < min_steer_speed) {
+        // Very low speed: scale steering with speed (prevent tank spin)
+        float low_factor = speed / min_steer_speed;
+        turn_amount *= low_factor * low_factor;  // quadratic ramp-up
+    } else if (speed > peak_steer_speed) {
+        // High speed: reduce steering (wider turning radius)
+        float high_ratio = (speed - peak_steer_speed) / (max_px_speed - peak_steer_speed);
+        high_ratio = clamp(high_ratio, 0.0f, 1.0f);
+        // Smooth curve: at max speed, steering is reduced to ~30% of peak
+        float reduction = 1.0f / (1.0f + high_ratio * 3.0f);
+        turn_amount *= reduction;
+    }
 
-    // Only steer when moving
-    if (speed > 5.0f) {
+    // Only steer when actually moving
+    if (speed > 3.0f) {
         float turn_sign = (forward_speed >= 0) ? 1.0f : -1.0f;
         state.angle += turn_amount * turn_sign * dt;
     }
@@ -85,8 +104,7 @@ void VehiclePhysics::update(VehicleState& state, const VehicleParams& params,
     // Reconstruct velocity
     state.velocity = forward * forward_speed + right * lateral_speed;
 
-    // Speed cap
-    float max_px_speed = params.max_speed * SPEED_SCALE;
+    // Speed cap (reuse max_px_speed from steering section)
     if (state.velocity.length() > max_px_speed) {
         state.velocity = state.velocity.normalized() * max_px_speed;
     }
@@ -171,6 +189,84 @@ static void init_types() {
         27.0f, 0.5f, 0.6f, 0.9f, 0.25f, 0.75f, 1.8f, 0.15f,
         0.225f, 0.247f, 0.5f, 0.1f,
         0.55f, 0.8f, 1.0f, 0.103f, 0.192f, 130};
+}
+
+// Parse vehicles.txt and override hardcoded defaults
+void load_from_file(const char* path) {
+    init_types();  // ensure defaults are set first
+
+    FILE* f = std::fopen(path, "r");
+    if (!f) {
+        std::fprintf(stderr, "vehicles.txt not found at %s, using defaults\n", path);
+        return;
+    }
+
+    std::fprintf(stderr, "Loading vehicle config from %s\n", path);
+
+    int current = -1;  // index into s_types
+    char line[256];
+
+    while (std::fgets(line, sizeof(line), f)) {
+        // Strip trailing newline/whitespace
+        int len = static_cast<int>(std::strlen(line));
+        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' '))
+            line[--len] = '\0';
+
+        // Skip empty lines and comments
+        if (len == 0 || line[0] == '#') continue;
+
+        // Section header [Name]
+        if (line[0] == '[') {
+            char name[128] = {};
+            if (std::sscanf(line, "[%127[^]]]", name) == 1) {
+                // Find vehicle by name
+                current = -1;
+                for (int i = 0; i < 10; i++) {
+                    if (std::strcmp(s_types[i].name, name) == 0) {
+                        current = i;
+                        break;
+                    }
+                }
+                if (current < 0) {
+                    std::fprintf(stderr, "  Unknown vehicle: %s\n", name);
+                }
+            }
+            continue;
+        }
+
+        if (current < 0) continue;
+
+        // key = value
+        char key[64] = {};
+        float val = 0;
+        if (std::sscanf(line, "%63s = %f", key, &val) == 2) {
+            VehicleParams& p = s_types[current];
+            if      (std::strcmp(key, "model") == 0)       p.model = static_cast<int>(val);
+            else if (std::strcmp(key, "turbo") == 0)       p.turbo = val > 0.5f;
+            else if (std::strcmp(key, "value") == 0)       p.value = static_cast<int>(val);
+            else if (std::strcmp(key, "max_hp") == 0)      p.max_hp = static_cast<int>(val);
+            else if (std::strcmp(key, "mass") == 0)        p.mass = val;
+            else if (std::strcmp(key, "front_drive") == 0) p.front_drive_bias = val;
+            else if (std::strcmp(key, "front_mass") == 0)  p.front_mass_bias = val;
+            else if (std::strcmp(key, "brake") == 0)       p.brake_friction = val;
+            else if (std::strcmp(key, "turn_in") == 0)     p.turn_in = val;
+            else if (std::strcmp(key, "turn_ratio") == 0)  p.turn_ratio = val;
+            else if (std::strcmp(key, "stability") == 0)   p.rear_end_stability = val;
+            else if (std::strcmp(key, "handbrake") == 0)   p.handbrake_slide = val;
+            else if (std::strcmp(key, "thrust") == 0)      p.thrust = val;
+            else if (std::strcmp(key, "max_speed") == 0)   p.max_speed = val;
+            else if (std::strcmp(key, "anti") == 0)        p.anti_strength = val;
+            else if (std::strcmp(key, "skid") == 0)        p.skid_threshold = val;
+            else if (std::strcmp(key, "gear1_mult") == 0)  p.gear1_mult = val;
+            else if (std::strcmp(key, "gear2_mult") == 0)  p.gear2_mult = val;
+            else if (std::strcmp(key, "gear3_mult") == 0)  p.gear3_mult = val;
+            else if (std::strcmp(key, "gear2_speed") == 0) p.gear2_speed = val;
+            else if (std::strcmp(key, "gear3_speed") == 0) p.gear3_speed = val;
+        }
+    }
+
+    std::fclose(f);
+    std::fprintf(stderr, "Vehicle config loaded.\n");
 }
 
 VehicleParams sedan()        { init_types(); return s_types[0]; }

@@ -28,8 +28,10 @@ struct VehicleParams {
     int max_hp = 100;
 };
 
-// Pre-defined vehicle types (ported from nyc.gci with speed scaling)
+// Vehicle type registry — loads from assets/data/vehicles.txt if available
 namespace VehicleTypes {
+    void load_from_file(const char* path);  // call once at startup
+
     VehicleParams sedan();
     VehicleParams sports();
     VehicleParams truck();

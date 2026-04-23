@@ -15,6 +15,8 @@ struct DevSettings {
     bool infinite_ammo = false;
     bool no_ped_damage = false;
     bool one_hit_kill = false;
+    bool aimbot = false;
+    float aimbot_range = 300.0f;  // pixels
 
     // Tunable values (multipliers, 0.1 - 5.0 range)
     float car_acceleration = 1.0f;

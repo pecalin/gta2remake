@@ -28,7 +28,15 @@ bool Game::init() {
     player_.set_position(respawn_point_);
 
     std::srand(static_cast<unsigned>(std::time(nullptr)));
+
+    // Load vehicle config from file (overrides hardcoded defaults)
+    VehicleTypes::load_from_file("assets/data/vehicles.txt");
+
     spawn_vehicles();
+
+    // Init sprite system
+    sprites_.init(window_.renderer());
+    load_sprites();
 
     // Init menu
     menu_.init(Window::WIDTH, Window::HEIGHT, &window_);
@@ -139,6 +147,58 @@ void Game::handle_weapon_switch() {
             }
         }
     }
+}
+
+// Determine aim angle: mouse > aimbot > facing direction
+float Game::get_aim_angle() {
+    const auto& dev = menu_.dev();
+    Vec2 player_screen = camera_.world_to_screen(player_.position());
+
+    // 1. Mouse aim — if mouse has moved recently, aim toward cursor
+    if (use_mouse_aim_) {
+        float dx = static_cast<float>(input_.mouse_x()) - player_screen.x;
+        float dy = static_cast<float>(input_.mouse_y()) - player_screen.y;
+        if (dx * dx + dy * dy > 16.0f) {
+            return std::atan2(dy, dx);
+        }
+    }
+
+    // 2. Aimbot — only if enabled in dev settings
+    if (dev.aimbot) {
+        float best_dist = dev.aimbot_range;
+        Vec2 best_target = {0, 0};
+        bool found = false;
+
+        // Check pedestrians
+        for (auto& ped : spawn_manager_.pedestrians()) {
+            if (!ped.active() || ped.state() == PedState::DEAD) continue;
+            float dist = (ped.position() - player_.position()).length();
+            if (dist < best_dist) {
+                best_dist = dist;
+                best_target = ped.position();
+                found = true;
+            }
+        }
+
+        // Check cops
+        for (auto& cop : police_ai_.cops()) {
+            if (!cop.alive) continue;
+            float dist = (cop.position - player_.position()).length();
+            if (dist < best_dist) {
+                best_dist = dist;
+                best_target = cop.position;
+                found = true;
+            }
+        }
+
+        if (found) {
+            Vec2 dir = best_target - player_.position();
+            return std::atan2(dir.y, dir.x);
+        }
+    }
+
+    // 3. Fallback — keep previous aim angle (no snapping to move direction)
+    return aim_angle_;
 }
 
 // Shooting is handled per-tick in update() since it uses is_down() for continuous fire
@@ -506,6 +566,62 @@ void Game::load_game() {
     // TODO: deserialize game state from file
 }
 
+void Game::load_sprites() {
+    // ---- Character sprites ----
+    // LPC spritesheet format: rows are directions, columns are animation frames
+    // Adjust row numbers to match your spritesheet layout
+    // Default LPC "walkcycle" sheet: row 0=up, 1=left, 2=down, 3=right, 9 frames each, 64x64 per frame
+    // LPC full spritesheet: rows are 0-indexed
+    // Walk: row 8=up, 9=left, 10=down, 11=right (9 frames each)
+    // Death: row 20 (6 frames)
+    // LPC full spritesheet (0-indexed rows):
+    //   Walk: 8=up, 9=left, 10=down, 11=right (9 frames)
+    //   Death: 20 (6 frames)
+    //   Run:  38=up, 39=left, 40=down, 41=right (9 frames)
+    //
+    // Player always uses RUN animation for movement
+    sprites_.load_character("player", "assets/sprites/characters/player.png",
+                            64, 64, 9,
+                            8, 9, 10, 11,       // walk rows (up,left,down,right)
+                            20, 6,               // death row, death frames
+                            38, 39, 40, 41, 8);  // run rows (up,left,down,right), run frames
+
+    // Civilians: walk normally, run when fleeing
+    sprites_.load_character("civilian", "assets/sprites/characters/civilian.png",
+                            64, 64, 9,
+                            8, 9, 10, 11,
+                            20, 6,
+                            38, 39, 40, 41, 8);
+
+    // Cops: walk on patrol, run when pursuing
+    sprites_.load_character("cop", "assets/sprites/characters/cop.png",
+                            64, 64, 9,
+                            8, 9, 10, 11,
+                            20, 6,
+                            38, 39, 40, 41, 8);
+
+    // ---- Vehicle sprites ----
+    // Option A: Single image (game rotates it with SDL_RenderCopyEx)
+    //   load_vehicle("car_name", path, width, height, 1)
+    //
+    // Option B: Pre-rotated spritesheet (single row, N angles from east clockwise)
+    //   load_vehicle("car_name", path, frame_w, frame_h, num_angles)
+
+    // Vehicle names must match the names in vehicles.txt
+    sprites_.load_vehicle("Romero",    "assets/sprites/vehicles/romero.png",    48, 80, 1);
+    sprites_.load_vehicle("Wellard",   "assets/sprites/vehicles/wellard.png",   48, 80, 1);
+    sprites_.load_vehicle("Box Truck", "assets/sprites/vehicles/boxtruck.png",  52, 96, 1);
+    sprites_.load_vehicle("Bus",       "assets/sprites/vehicles/bus.png",       52, 110, 1);
+    sprites_.load_vehicle("Cop Car",   "assets/sprites/vehicles/copcar.png",    48, 80, 1);
+    sprites_.load_vehicle("Taxi",      "assets/sprites/vehicles/taxi.png",      48, 80, 1);
+    sprites_.load_vehicle("Bank Van",  "assets/sprites/vehicles/bankvan.png",   50, 88, 1);
+    sprites_.load_vehicle("Beamer",    "assets/sprites/vehicles/beamer.png",    48, 80, 1);
+    sprites_.load_vehicle("Bug",       "assets/sprites/vehicles/bug.png",       40, 64, 1);
+    sprites_.load_vehicle("Pacifier",  "assets/sprites/vehicles/pacifier.png",  50, 88, 1);
+
+    // Note: missing sprite files are silently skipped — colored rectangles are used instead
+}
+
 void Game::update(float dt) {
     const auto& dev = menu_.dev();
 
@@ -514,13 +630,20 @@ void Game::update(float dt) {
     handle_player_death();
 
     if (!player_.is_wasted() && !player_.is_busted()) {
-        // Shooting (continuous fire — uses is_down)
+        // Mouse aim stays active once mouse has moved
+        if (input_.mouse_moved()) use_mouse_aim_ = true;
+
+        // Compute aim angle
+        aim_angle_ = get_aim_angle();
+
+        // Shooting (Ctrl or left mouse button)
         fire_cooldown_ -= dt;
-        if (input_.is_down(Action::SHOOT) && fire_cooldown_ <= 0.0f && !player_.in_vehicle()) {
+        bool wants_shoot = input_.is_down(Action::SHOOT) || input_.mouse_left();
+        if (wants_shoot && fire_cooldown_ <= 0.0f && !player_.in_vehicle()) {
             WeaponInfo info = get_weapon_info(current_weapon_);
             int ammo_idx = static_cast<int>(current_weapon_);
             if (ammo_[ammo_idx] > 0 || current_weapon_ == WeaponType::PISTOL) {
-                weapon_system_.fire(current_weapon_, player_.position(), player_.angle(), &player_);
+                weapon_system_.fire(current_weapon_, player_.position(), aim_angle_, &player_);
                 fire_cooldown_ = 1.0f / info.fire_rate;
 
                 if (current_weapon_ != WeaponType::PISTOL && !dev.infinite_ammo) {
@@ -675,15 +798,40 @@ void Game::render() {
     // Sorted entities
     for (auto& d : drawables) {
         switch (d.type) {
-            case Drawable::VEHICLE: vehicles_[d.index]->render(r, camera_); break;
-            case Drawable::PED:     peds[d.index].render(r, camera_);       break;
-            case Drawable::PLAYER:  player_.render(r, camera_);             break;
+            case Drawable::VEHICLE:
+                // Use sprite if available, otherwise colored rectangle
+                if (sprites_.get_vehicle(vehicles_[d.index]->params().name)) {
+                    Vec2 vs = camera_.world_to_screen(vehicles_[d.index]->position());
+                    sprites_.draw_vehicle(vehicles_[d.index]->params().name, vs,
+                                          vehicles_[d.index]->angle());
+                } else {
+                    vehicles_[d.index]->render(r, camera_);
+                }
+                break;
+            case Drawable::PED:
+                if (sprites_.get_character("civilian")) {
+                    peds[d.index].render_sprite(sprites_, camera_);
+                } else {
+                    peds[d.index].render(r, camera_);
+                }
+                break;
+            case Drawable::PLAYER:
+                if (sprites_.get_character("player")) {
+                    player_.render_sprite(sprites_, camera_);
+                } else {
+                    player_.render(r, camera_);
+                }
+                break;
             case Drawable::COP:     break; // cops rendered separately
         }
     }
 
     // Police (rendered via PoliceAI for proper visuals)
-    police_ai_.render(r, camera_);
+    if (sprites_.get_character("cop")) {
+        police_ai_.render_sprites(sprites_, r, camera_);
+    } else {
+        police_ai_.render(r, camera_);
+    }
 
     // Weapons/explosions on top
     weapon_system_.render(r, camera_);
@@ -692,6 +840,21 @@ void Game::render() {
     render_hud(r);
     render_minimap(r);
     render_overlay(r);
+
+    // Crosshair / aim indicator (only when on foot and not in menus)
+    if (!player_.in_vehicle() && !player_.is_wasted() && !player_.is_busted() && !paused_) {
+        Vec2 player_screen = camera_.world_to_screen(player_.position());
+        // Mouse cursor crosshair
+        if (use_mouse_aim_) {
+            int mx = input_.mouse_x();
+            int my = input_.mouse_y();
+            SDL_SetRenderDrawColor(r, 255, 255, 50, 180);
+            SDL_RenderDrawLine(r, mx - 8, my, mx - 3, my);
+            SDL_RenderDrawLine(r, mx + 3, my, mx + 8, my);
+            SDL_RenderDrawLine(r, mx, my - 8, mx, my - 3);
+            SDL_RenderDrawLine(r, mx, my + 3, mx, my + 8);
+        }
+    }
 
     // Pause menu on top of everything
     if (paused_ && menu_.is_open()) {
@@ -750,9 +913,74 @@ void Game::render_hud(SDL_Renderer* r) {
     SDL_Rect weapon_bg = {Window::WIDTH - 200, Window::HEIGHT - 40, 190, 30};
     SDL_RenderFillRect(r, &weapon_bg);
 
-    SDL_SetRenderDrawColor(r, wi.color.r, wi.color.g, wi.color.b, 255);
-    SDL_Rect weapon_icon = {Window::WIDTH - 196, Window::HEIGHT - 36, 22, 22};
-    SDL_RenderFillRect(r, &weapon_icon);
+    // Draw weapon icon
+    {
+        int ix = Window::WIDTH - 196;
+        int iy = Window::HEIGHT - 36;
+        SDL_Color wc = wi.color;
+        SDL_Rect rc;  // reusable rect
+
+        auto fill = [&](int x, int y, int w, int h) {
+            rc = {x, y, w, h};
+            SDL_RenderFillRect(r, &rc);
+        };
+
+        switch (current_weapon_) {
+            case WeaponType::PISTOL:
+                SDL_SetRenderDrawColor(r, wc.r, wc.g, wc.b, 255);
+                fill(ix+6, iy+2, 14, 6);    // barrel
+                fill(ix+6, iy+8, 8, 10);    // grip
+                SDL_SetRenderDrawColor(r, 60, 60, 60, 255);
+                fill(ix+18, iy+3, 4, 4);    // muzzle
+                break;
+            case WeaponType::MACHINE_GUN:
+                SDL_SetRenderDrawColor(r, wc.r, wc.g, wc.b, 255);
+                fill(ix+2, iy+4, 20, 5);    // barrel
+                fill(ix+8, iy+9, 6, 9);     // grip
+                SDL_SetRenderDrawColor(r, 180, 150, 50, 255);
+                fill(ix+14, iy+9, 4, 7);    // magazine
+                SDL_SetRenderDrawColor(r, 60, 60, 60, 255);
+                fill(ix, iy+5, 3, 3);       // muzzle
+                break;
+            case WeaponType::ROCKET:
+                SDL_SetRenderDrawColor(r, 80, 100, 80, 255);
+                fill(ix+4, iy+6, 18, 6);    // tube
+                SDL_SetRenderDrawColor(r, wc.r, wc.g, wc.b, 255);
+                fill(ix, iy+4, 6, 10);      // warhead
+                SDL_SetRenderDrawColor(r, 60, 60, 60, 255);
+                fill(ix+8, iy+12, 6, 6);    // grip
+                break;
+            case WeaponType::FLAMETHROWER:
+                SDL_SetRenderDrawColor(r, 100, 100, 100, 255);
+                fill(ix+2, iy+6, 14, 5);    // barrel
+                SDL_SetRenderDrawColor(r, wc.r, wc.g, wc.b, 255);
+                fill(ix, iy+3, 5, 5);       // flame tip
+                SDL_SetRenderDrawColor(r, 200, 60, 60, 255);
+                fill(ix+14, iy+3, 8, 14);   // tank
+                break;
+            case WeaponType::MOLOTOV:
+                SDL_SetRenderDrawColor(r, 100, 60, 30, 255);
+                fill(ix+8, iy+8, 8, 12);    // bottle body
+                SDL_SetRenderDrawColor(r, 80, 50, 20, 255);
+                fill(ix+10, iy+3, 4, 6);    // neck
+                SDL_SetRenderDrawColor(r, wc.r, wc.g, wc.b, 255);
+                fill(ix+9, iy, 6, 4);       // rag/flame
+                break;
+            case WeaponType::GRENADE:
+                SDL_SetRenderDrawColor(r, wc.r, wc.g, wc.b, 255);
+                fill(ix+5, iy+6, 12, 14);   // body
+                fill(ix+7, iy+4, 8, 4);     // top
+                SDL_SetRenderDrawColor(r, 200, 200, 50, 255);
+                fill(ix+9, iy+1, 4, 4);     // pin
+                SDL_SetRenderDrawColor(r, 40, 60, 40, 255);
+                fill(ix+8, iy+11, 6, 2);    // stripe
+                break;
+            default:
+                SDL_SetRenderDrawColor(r, wc.r, wc.g, wc.b, 255);
+                fill(ix, iy, 22, 22);
+                break;
+        }
+    }
 
     int ammo_idx = static_cast<int>(current_weapon_);
     int ammo_max = get_weapon_info(current_weapon_).ammo_per_pickup * 3;
@@ -959,6 +1187,7 @@ void Game::shutdown() {
     vehicles_.clear();
     weapon_system_.clear();
     police_ai_.clear();
+    sprites_.shutdown();
     window_.shutdown();
     SDL_Quit();
 }

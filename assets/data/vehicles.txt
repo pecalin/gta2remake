@@ -1,0 +1,259 @@
+# Vehicle Configuration File
+# Edit values here and restart the game to apply changes.
+# Lines starting with # are comments.
+#
+# Each vehicle block starts with [VehicleName] and contains key = value pairs.
+# Values are floats unless noted otherwise.
+#
+# Parameters:
+#   model        - internal model ID (int)
+#   turbo        - has turbo boost: 0 or 1
+#   value        - money reward when crushed (int)
+#   max_hp       - hit points before destruction (int)
+#   mass         - vehicle weight (affects collisions, 6-30)
+#   front_drive  - front drive bias: 0.0=RWD, 0.5=AWD, 1.0=FWD
+#   front_mass   - front weight distribution (0.0-1.0)
+#   brake        - brake friction (higher = stops faster, 0.5-3.0)
+#   turn_in      - how quickly steering engages (0.05-0.75)
+#   turn_ratio   - maximum steering angle factor (0.1-1.0)
+#   stability    - rear end stability (higher = less oversteer, 0.5-4.0)
+#   handbrake    - handbrake slide factor (lower = more drift, 0.1-0.8)
+#   thrust       - acceleration force (0.05-0.25)
+#   max_speed    - top speed normalized (0.1-0.5, multiplied by 800)
+#   anti         - anti-roll strength (0.5-1.5)
+#   skid         - speed at which tires lose grip (0.03-0.15)
+#   gear1_mult   - gear 1 torque multiplier
+#   gear2_mult   - gear 2 torque multiplier
+#   gear3_mult   - gear 3 torque multiplier (usually 1.0)
+#   gear2_speed  - speed threshold to shift to gear 2
+#   gear3_speed  - speed threshold to shift to gear 3
+
+[Romero]
+model = 0
+turbo = 0
+value = 50
+max_hp = 100
+mass = 16.5
+front_drive = 1.0
+front_mass = 0.5
+brake = 1.75
+turn_in = 0.145
+turn_ratio = 0.45
+stability = 1.25
+handbrake = 0.18
+thrust = 0.152
+max_speed = 0.245
+anti = 1.0
+skid = 0.065
+gear1_mult = 0.55
+gear2_mult = 0.68
+gear3_mult = 1.0
+gear2_speed = 0.107
+gear3_speed = 0.165
+
+[Wellard]
+model = 1
+turbo = 0
+value = 50
+max_hp = 100
+mass = 14.5
+front_drive = 1.0
+front_mass = 0.55
+brake = 2.0
+turn_in = 0.65
+turn_ratio = 0.35
+stability = 1.5
+handbrake = 0.25
+thrust = 0.22
+max_speed = 0.38
+anti = 1.0
+skid = 0.139
+gear1_mult = 0.5
+gear2_mult = 0.65
+gear3_mult = 1.0
+gear2_speed = 0.125
+gear3_speed = 0.228
+
+[Box Truck]
+model = 7
+turbo = 0
+value = 90
+max_hp = 150
+mass = 28.0
+front_drive = 0.5
+front_mass = 0.7
+brake = 2.0
+turn_in = 0.25
+turn_ratio = 0.65
+stability = 2.5
+handbrake = 0.45
+thrust = 0.185
+max_speed = 0.175
+anti = 0.75
+skid = 0.065
+gear1_mult = 0.545
+gear2_mult = 0.675
+gear3_mult = 1.0
+gear2_speed = 0.088
+gear3_speed = 0.114
+
+[Bus]
+model = 11
+turbo = 0
+value = 60
+max_hp = 200
+mass = 30.0
+front_drive = 0.5
+front_mass = 0.5
+brake = 2.0
+turn_in = 0.25
+turn_ratio = 0.65
+stability = 2.5
+handbrake = 0.75
+thrust = 0.235
+max_speed = 0.215
+anti = 0.75
+skid = 0.085
+gear1_mult = 0.55
+gear2_mult = 0.75
+gear3_mult = 1.0
+gear2_speed = 0.1
+gear3_speed = 0.161
+
+[Cop Car]
+model = 12
+turbo = 1
+value = 60
+max_hp = 120
+mass = 14.5
+front_drive = 1.0
+front_mass = 0.5
+brake = 2.0
+turn_in = 0.433
+turn_ratio = 0.4
+stability = 1.25
+handbrake = 0.4
+thrust = 0.15
+max_speed = 0.415
+anti = 1.0
+skid = 0.115
+gear1_mult = 0.55
+gear2_mult = 0.68
+gear3_mult = 1.0
+gear2_speed = 0.18
+gear3_speed = 0.29
+
+[Taxi]
+model = 13
+turbo = 0
+value = 50
+max_hp = 100
+mass = 14.5
+front_drive = 0.75
+front_mass = 0.5
+brake = 1.75
+turn_in = 0.145
+turn_ratio = 0.45
+stability = 1.25
+handbrake = 0.18
+thrust = 0.14
+max_speed = 0.24
+anti = 1.0
+skid = 0.085
+gear1_mult = 0.55
+gear2_mult = 0.68
+gear3_mult = 1.0
+gear2_speed = 0.12
+gear3_speed = 0.166
+
+[Bank Van]
+model = 4
+turbo = 0
+value = 25
+max_hp = 150
+mass = 24.0
+front_drive = 0.5
+front_mass = 0.5
+brake = 1.5
+turn_in = 0.5
+turn_ratio = 0.4
+stability = 2.0
+handbrake = 0.75
+thrust = 0.17
+max_speed = 0.186
+anti = 0.5
+skid = 0.075
+gear1_mult = 0.55
+gear2_mult = 0.675
+gear3_mult = 1.0
+gear2_speed = 0.081
+gear3_speed = 0.13
+
+[Beamer]
+model = 5
+turbo = 1
+value = 40
+max_hp = 100
+mass = 16.0
+front_drive = 1.0
+front_mass = 0.6
+brake = 3.0
+turn_in = 0.75
+turn_ratio = 0.4
+stability = 2.0
+handbrake = 0.5
+thrust = 0.15
+max_speed = 0.385
+anti = 1.0
+skid = 0.14
+gear1_mult = 0.575
+gear2_mult = 0.75
+gear3_mult = 1.0
+gear2_speed = 0.185
+gear3_speed = 0.275
+
+[Bug]
+model = 8
+turbo = 0
+value = 10
+max_hp = 60
+mass = 6.3
+front_drive = 1.0
+front_mass = 0.45
+brake = 1.265
+turn_in = 0.3
+turn_ratio = 0.175
+stability = 1.5
+handbrake = 0.65
+thrust = 0.095
+max_speed = 0.235
+anti = 1.0
+skid = 0.05
+gear1_mult = 0.55
+gear2_mult = 0.625
+gear3_mult = 1.0
+gear2_speed = 0.125
+gear3_speed = 0.152
+
+[Pacifier]
+model = 3
+turbo = 0
+value = 30
+max_hp = 130
+mass = 27.0
+front_drive = 0.5
+front_mass = 0.6
+brake = 0.9
+turn_in = 0.25
+turn_ratio = 0.75
+stability = 1.8
+handbrake = 0.15
+thrust = 0.225
+max_speed = 0.247
+anti = 0.5
+skid = 0.1
+gear1_mult = 0.55
+gear2_mult = 0.8
+gear3_mult = 1.0
+gear2_speed = 0.103
+gear3_speed = 0.192

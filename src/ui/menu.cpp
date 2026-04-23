@@ -129,6 +129,10 @@ void Menu::build_dev_items() {
     it.toggle_value = &dev_.no_ped_damage;
     items_.push_back(it);
 
+    it.label = "AIMBOT";
+    it.toggle_value = &dev_.aimbot;
+    items_.push_back(it);
+
     // --- Sliders ---
     it.type = MenuItemType::SLIDER;
     it.toggle_value = nullptr;
@@ -175,6 +179,18 @@ void Menu::build_dev_items() {
     it.label = "WANTED GAIN";
     it.slider_value = &dev_.wanted_gain;
     items_.push_back(it);
+
+    it.label = "AIMBOT RANGE";
+    it.slider_value = &dev_.aimbot_range;
+    it.slider_min = 100.0f;
+    it.slider_max = 800.0f;
+    it.slider_step = 25.0f;
+    items_.push_back(it);
+
+    // Reset step for any items after
+    it.slider_min = 0.1f;
+    it.slider_max = 5.0f;
+    it.slider_step = 0.1f;
 
     // --- Back ---
     it.type = MenuItemType::ACTION;

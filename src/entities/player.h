@@ -3,6 +3,7 @@
 #include "core/input.h"
 
 class Map;
+class SpriteManager;
 
 class Player : public Entity {
 public:
@@ -11,6 +12,11 @@ public:
     void handle_input(const Input& input, float dt);
     void update(float dt) override;
     void render(SDL_Renderer* renderer, const Camera& camera) const override;
+    void render_sprite(SpriteManager& sprites, const Camera& camera) const;
+
+    int facing_direction() const { return facing_dir_; }
+    float anim_time() const { return anim_time_; }
+    bool is_moving() const { return vel_.length_sq() > 1.0f; }
 
     void resolve_map_collision(const Map& map);
 
@@ -49,6 +55,8 @@ private:
     float move_speed_ = 150.0f;
     float speed_mult_ = 1.0f;
     bool in_vehicle_ = false;
+    int facing_dir_ = 0;       // 0=down, 1=left, 2=right, 3=up
+    float anim_time_ = 0.0f;
 
     int health_ = 100;
     int armor_ = 0;

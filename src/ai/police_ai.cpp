@@ -3,6 +3,7 @@
 #include "world/map.h"
 #include "systems/weapon_system.h"
 #include "core/camera.h"
+#include "core/sprite.h"
 #include <cstdlib>
 #include <cmath>
 #include <algorithm>
@@ -99,8 +100,18 @@ void PoliceAI::update_cop(CopUnit& cop, float dt, const Player& player,
                            int wanted_level, WeaponSystem& weapons) {
     if (!cop.alive) return;
 
+    cop.anim_time += dt;
     float dist_to_player = (cop.position - player.position()).length();
     cop.fire_cooldown -= dt;
+
+    // Update facing direction from velocity
+    if (cop.velocity.length_sq() > 1.0f) {
+        if (std::abs(cop.velocity.x) > std::abs(cop.velocity.y)) {
+            cop.facing_dir = (cop.velocity.x < 0) ? 1 : 2;
+        } else {
+            cop.facing_dir = (cop.velocity.y < 0) ? 3 : 0;
+        }
+    }
 
     switch (cop.state) {
         case CopState::PURSUE_FOOT: {
@@ -318,6 +329,52 @@ void PoliceAI::render(SDL_Renderer* renderer, const Camera& camera) const {
                 5, 5
             };
             SDL_RenderFillRect(renderer, &hat);
+        }
+    }
+}
+
+void PoliceAI::render_sprites(SpriteManager& sprites, SDL_Renderer* renderer, const Camera& camera) const {
+    for (auto& cop : cops_) {
+        if (!cop.alive) continue;
+
+        Vec2 screen = camera.world_to_screen(cop.position);
+
+        if (cop.in_vehicle) {
+            // Cop cars still use rectangle rendering (no vehicle sprite per cop yet)
+            float hw = 14.0f, hh = 22.0f;
+            float cos_a = std::cos(cop.angle);
+            float sin_a = std::sin(cop.angle);
+
+            for (float t = -hh; t <= hh; t += 1.0f) {
+                float x1r = -hw * cos_a - t * sin_a + screen.x;
+                float y1r = -hw * sin_a + t * cos_a + screen.y;
+                float x2r =  hw * cos_a - t * sin_a + screen.x;
+                float y2r =  hw * sin_a + t * cos_a + screen.y;
+
+                if (std::abs(t) < 5.0f)
+                    SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+                else
+                    SDL_SetRenderDrawColor(renderer, cop.color.r, cop.color.g, cop.color.b, 255);
+                SDL_RenderDrawLine(renderer,
+                    static_cast<int>(x1r), static_cast<int>(y1r),
+                    static_cast<int>(x2r), static_cast<int>(y2r));
+            }
+
+            // Siren
+            static int flash_timer = 0;
+            flash_timer++;
+            SDL_Color siren = (flash_timer % 20 < 10) ?
+                SDL_Color{255, 0, 0, 255} : SDL_Color{0, 0, 255, 255};
+            float light_x = screen.x - std::sin(cop.angle) * 5.0f;
+            float light_y = screen.y + std::cos(cop.angle) * 5.0f;
+            SDL_SetRenderDrawColor(renderer, siren.r, siren.g, siren.b, 200);
+            SDL_Rect light = {static_cast<int>(light_x - 3), static_cast<int>(light_y - 3), 6, 6};
+            SDL_RenderFillRect(renderer, &light);
+        } else {
+            // Foot cop — use sprite
+            bool moving = cop.velocity.length_sq() > 1.0f;
+            bool running = (cop.state == CopState::PURSUE_FOOT);
+            sprites.draw_character("cop", screen, cop.facing_dir, cop.anim_time, moving, 0.4f, running);
         }
     }
 }

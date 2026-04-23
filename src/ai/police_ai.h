@@ -7,6 +7,7 @@
 class Map;
 class Player;
 class WeaponSystem;
+class SpriteManager;
 
 enum class CopState {
     INACTIVE,
@@ -29,6 +30,8 @@ struct CopUnit {
     float search_timer = 0.0f;
     Vec2 last_known_player_pos;
     SDL_Color color = {50, 50, 200, 255};
+    int facing_dir = 0;       // 0=down, 1=left, 2=right, 3=up
+    float anim_time = 0.0f;
 
     // Vehicle for car-based cops
     Vehicle* vehicle = nullptr;
@@ -40,6 +43,7 @@ public:
     void update(float dt, const Player& player, int wanted_level,
                 WeaponSystem& weapons);
     void render(SDL_Renderer* renderer, const Camera& camera) const;
+    void render_sprites(SpriteManager& sprites, SDL_Renderer* renderer, const Camera& camera) const;
 
     // Can any cop see the player?
     bool can_see_player(const Player& player) const;
