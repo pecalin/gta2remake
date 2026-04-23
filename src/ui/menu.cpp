@@ -1,11 +1,13 @@
 #include "ui/menu.h"
 #include "core/input.h"
+#include "core/window.h"
 #include <cstring>
 #include <cstdio>
 #include <cmath>
 
-void Menu::init(int screen_w, int screen_h) {
+void Menu::init(int screen_w, int screen_h, Window* window) {
     screen_w_ = screen_w;
+    window_ = window;
     screen_h_ = screen_h;
 }
 
@@ -27,10 +29,11 @@ void Menu::set_screen(MenuScreen screen) {
     items_.clear();
 
     switch (screen) {
-        case MenuScreen::PAUSE:    build_pause_items();    break;
-        case MenuScreen::OPTIONS:  build_options_items();   break;
-        case MenuScreen::CONTROLS: build_controls_items();  break;
-        case MenuScreen::DEV_MODE: build_dev_items();       break;
+        case MenuScreen::PAUSE:      build_pause_items();      break;
+        case MenuScreen::OPTIONS:    build_options_items();     break;
+        case MenuScreen::CONTROLS:   build_controls_items();    break;
+        case MenuScreen::DEV_MODE:   build_dev_items();         break;
+        case MenuScreen::RESOLUTION: build_resolution_items();  break;
         case MenuScreen::NONE: break;
     }
 }
@@ -62,7 +65,20 @@ void Menu::build_pause_items() {
 
 void Menu::build_options_items() {
     MenuItem it;
+
+    it.type = MenuItemType::TOGGLE;
+    it.label = "FULLSCREEN";
+    it.toggle_value = &fullscreen_;
+    it.on_select = nullptr;
+    it.slider_value = nullptr;
+    items_.push_back(it);
+
     it.type = MenuItemType::ACTION;
+    it.toggle_value = nullptr;
+
+    it.label = "RESOLUTION";
+    it.on_select = [this]() { set_screen(MenuScreen::RESOLUTION); };
+    items_.push_back(it);
 
     it.label = "CONTROLS";
     it.on_select = [this]() { set_screen(MenuScreen::CONTROLS); };
@@ -169,6 +185,38 @@ void Menu::build_dev_items() {
     items_.push_back(it);
 }
 
+void Menu::build_resolution_items() {
+    struct ResOption { int w; int h; const char* label; };
+    ResOption resolutions[] = {
+        {800,  600,  "800X600"},
+        {1024, 768,  "1024X768"},
+        {1280, 720,  "1280X720"},
+        {1366, 768,  "1366X768"},
+        {1600, 900,  "1600X900"},
+        {1920, 1080, "1920X1080"},
+        {2560, 1440, "2560X1440"},
+    };
+
+    MenuItem it;
+    it.type = MenuItemType::ACTION;
+    it.toggle_value = nullptr;
+    it.slider_value = nullptr;
+
+    for (auto& res : resolutions) {
+        int rw = res.w;
+        int rh = res.h;
+        it.label = res.label;
+        it.on_select = [this, rw, rh]() {
+            if (window_) window_->set_resolution(rw, rh);
+        };
+        items_.push_back(it);
+    }
+
+    it.label = "BACK";
+    it.on_select = [this]() { set_screen(MenuScreen::OPTIONS); };
+    items_.push_back(it);
+}
+
 void Menu::handle_input(const Input& input) {
     if (screen_ == MenuScreen::NONE) return;
 
@@ -192,20 +240,52 @@ void Menu::handle_input(const Input& input) {
                 item.on_select();
             } else if (item.type == MenuItemType::TOGGLE && item.toggle_value) {
                 *item.toggle_value = !(*item.toggle_value);
+                // Apply fullscreen toggle immediately
+                if (item.toggle_value == &fullscreen_ && window_) {
+                    window_->set_fullscreen(fullscreen_);
+                }
             }
         }
 
-        // Left/right for sliders
+        // Left/right for sliders — with hold-to-repeat
         if (item.type == MenuItemType::SLIDER && item.slider_value) {
-            if (input.is_pressed(Action::MOVE_RIGHT)) {
-                *item.slider_value += item.slider_step;
+            bool right_held = input.is_down(Action::MOVE_RIGHT);
+            bool left_held = input.is_down(Action::MOVE_LEFT);
+            int dir = right_held ? 1 : (left_held ? -1 : 0);
+
+            bool do_step = false;
+
+            if (dir != 0) {
+                if (input.is_pressed(Action::MOVE_RIGHT) || input.is_pressed(Action::MOVE_LEFT)) {
+                    // First press — immediate step + start repeat timer
+                    do_step = true;
+                    repeat_dir_ = dir;
+                    repeat_timer_ = repeat_delay_;
+                } else if (dir == repeat_dir_) {
+                    // Holding — count down and repeat
+                    repeat_timer_ -= 1.0f / 60.0f;  // menu runs at display refresh
+                    if (repeat_timer_ <= 0.0f) {
+                        do_step = true;
+                        repeat_timer_ = repeat_rate_;
+                    }
+                }
+            } else {
+                repeat_dir_ = 0;
+                repeat_timer_ = 0.0f;
+            }
+
+            if (do_step) {
+                *item.slider_value += item.slider_step * dir;
                 if (*item.slider_value > item.slider_max)
                     *item.slider_value = item.slider_max;
-            }
-            if (input.is_pressed(Action::MOVE_LEFT)) {
-                *item.slider_value -= item.slider_step;
                 if (*item.slider_value < item.slider_min)
                     *item.slider_value = item.slider_min;
+            }
+        } else {
+            // Not on a slider — reset repeat state
+            if (!input.is_down(Action::MOVE_LEFT) && !input.is_down(Action::MOVE_RIGHT)) {
+                repeat_dir_ = 0;
+                repeat_timer_ = 0.0f;
             }
         }
     }
@@ -223,6 +303,9 @@ void Menu::handle_input(const Input& input) {
                 set_screen(MenuScreen::OPTIONS);
                 break;
             case MenuScreen::DEV_MODE:
+                set_screen(MenuScreen::OPTIONS);
+                break;
+            case MenuScreen::RESOLUTION:
                 set_screen(MenuScreen::OPTIONS);
                 break;
             case MenuScreen::NONE:
@@ -355,6 +438,7 @@ void Menu::render(SDL_Renderer* renderer) {
     if (screen_ == MenuScreen::OPTIONS)  title = "OPTIONS";
     if (screen_ == MenuScreen::CONTROLS) title = "CONTROLS";
     if (screen_ == MenuScreen::DEV_MODE) title = "DEV MODE";
+    if (screen_ == MenuScreen::RESOLUTION) title = "RESOLUTION";
 
     // Panel sizing
     int panel_w = (screen_ == MenuScreen::DEV_MODE) ? 500 : 400;

@@ -1,32 +1,64 @@
 #include "core/input.h"
 #include <cstring>
 
+void Input::map_scancode(SDL_Scancode sc, bool down) {
+    // Map a scancode to one or more actions
+    // For key-down events, set both held_ and pressed_
+    // For key-up events, only clear held_
+    struct Mapping { SDL_Scancode sc; Action act; };
+    static const Mapping mappings[] = {
+        {SDL_SCANCODE_W,      Action::MOVE_UP},
+        {SDL_SCANCODE_UP,     Action::MOVE_UP},
+        {SDL_SCANCODE_S,      Action::MOVE_DOWN},
+        {SDL_SCANCODE_DOWN,   Action::MOVE_DOWN},
+        {SDL_SCANCODE_A,      Action::MOVE_LEFT},
+        {SDL_SCANCODE_LEFT,   Action::MOVE_LEFT},
+        {SDL_SCANCODE_D,      Action::MOVE_RIGHT},
+        {SDL_SCANCODE_RIGHT,  Action::MOVE_RIGHT},
+        {SDL_SCANCODE_LCTRL,  Action::SHOOT},
+        {SDL_SCANCODE_RCTRL,  Action::SHOOT},
+        {SDL_SCANCODE_F,      Action::ENTER_EXIT_VEHICLE},
+        {SDL_SCANCODE_SPACE,  Action::HANDBRAKE},
+        {SDL_SCANCODE_E,      Action::WEAPON_NEXT},
+        {SDL_SCANCODE_Q,      Action::WEAPON_PREV},
+        {SDL_SCANCODE_ESCAPE, Action::PAUSE},
+        // Menu actions (same physical keys, different logical actions)
+        {SDL_SCANCODE_W,      Action::MENU_UP},
+        {SDL_SCANCODE_UP,     Action::MENU_UP},
+        {SDL_SCANCODE_S,      Action::MENU_DOWN},
+        {SDL_SCANCODE_DOWN,   Action::MENU_DOWN},
+        {SDL_SCANCODE_RETURN, Action::MENU_CONFIRM},
+        {SDL_SCANCODE_KP_ENTER, Action::MENU_CONFIRM},
+        {SDL_SCANCODE_ESCAPE, Action::MENU_BACK},
+    };
+
+    for (auto& m : mappings) {
+        if (m.sc == sc) {
+            int idx = static_cast<int>(m.act);
+            held_[idx] = down;
+            if (down) pressed_[idx] = true;  // pressed_ is cleared each frame
+        }
+    }
+}
+
 void Input::update() {
-    std::memcpy(previous_, current_, sizeof(current_));
+    // Clear one-shot pressed flags from last frame
+    std::memset(pressed_, 0, sizeof(pressed_));
 
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
-        if (e.type == SDL_QUIT) {
-            quit_ = true;
+        switch (e.type) {
+            case SDL_QUIT:
+                quit_ = true;
+                break;
+            case SDL_KEYDOWN:
+                if (!e.key.repeat) {
+                    map_scancode(e.key.keysym.scancode, true);
+                }
+                break;
+            case SDL_KEYUP:
+                map_scancode(e.key.keysym.scancode, false);
+                break;
         }
     }
-
-    const Uint8* keys = SDL_GetKeyboardState(nullptr);
-
-    current_[static_cast<int>(Action::MOVE_UP)]    = keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP];
-    current_[static_cast<int>(Action::MOVE_DOWN)]  = keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN];
-    current_[static_cast<int>(Action::MOVE_LEFT)]  = keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT];
-    current_[static_cast<int>(Action::MOVE_RIGHT)] = keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT];
-    current_[static_cast<int>(Action::SHOOT)]              = keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL];
-    current_[static_cast<int>(Action::ENTER_EXIT_VEHICLE)] = keys[SDL_SCANCODE_F];
-    current_[static_cast<int>(Action::HANDBRAKE)]          = keys[SDL_SCANCODE_SPACE];
-    current_[static_cast<int>(Action::WEAPON_NEXT)]        = keys[SDL_SCANCODE_E];
-    current_[static_cast<int>(Action::WEAPON_PREV)]        = keys[SDL_SCANCODE_Q];
-    current_[static_cast<int>(Action::PAUSE)]              = keys[SDL_SCANCODE_ESCAPE];
-
-    // Menu navigation (same keys but used separately when menu is open)
-    current_[static_cast<int>(Action::MENU_UP)]      = keys[SDL_SCANCODE_UP]     || keys[SDL_SCANCODE_W];
-    current_[static_cast<int>(Action::MENU_DOWN)]    = keys[SDL_SCANCODE_DOWN]   || keys[SDL_SCANCODE_S];
-    current_[static_cast<int>(Action::MENU_CONFIRM)] = keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_KP_ENTER];
-    current_[static_cast<int>(Action::MENU_BACK)]    = keys[SDL_SCANCODE_ESCAPE];
 }

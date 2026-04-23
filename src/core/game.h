@@ -22,11 +22,11 @@ public:
     void shutdown();
 
 private:
-    void update(float dt);
+    void handle_frame_input();  // once per frame — all is_pressed() actions
+    void update(float dt);      // per physics tick — continuous actions only
     void render();
     void spawn_vehicles();
-    void handle_enter_exit_vehicle();
-    void handle_shooting(float dt);
+    void handle_weapon_switch();
     void check_pickup_collisions();
     void check_projectile_hits();
     void check_vehicle_ped_collisions();

@@ -31,7 +31,7 @@ bool Game::init() {
     spawn_vehicles();
 
     // Init menu
-    menu_.init(Window::WIDTH, Window::HEIGHT);
+    menu_.init(Window::WIDTH, Window::HEIGHT, &window_);
     menu_.on_resume = [this]() { paused_ = false; };
     menu_.on_save   = [this]() { save_game(); };
     menu_.on_load   = [this]() { load_game(); };
@@ -86,37 +86,39 @@ void Game::spawn_vehicles() {
     }
 }
 
-void Game::handle_enter_exit_vehicle() {
-    if (!input_.is_pressed(Action::ENTER_EXIT_VEHICLE)) return;
+// Called ONCE per frame — handles all is_pressed() one-shot actions
+void Game::handle_frame_input() {
     if (player_.is_wasted() || player_.is_busted()) return;
 
-    if (current_vehicle_) {
-        current_vehicle_->exit_vehicle(&player_);
-        current_vehicle_ = nullptr;
-    } else {
-        float best_dist = 999999.0f;
-        Vehicle* best = nullptr;
-        for (auto& v : vehicles_) {
-            if (v->can_enter(player_.position())) {
-                float dist = (v->position() - player_.position()).length();
-                if (dist < best_dist) {
-                    best_dist = dist;
-                    best = v.get();
+    // Enter/exit vehicle
+    if (input_.is_pressed(Action::ENTER_EXIT_VEHICLE)) {
+        if (current_vehicle_) {
+            current_vehicle_->exit_vehicle(&player_);
+            current_vehicle_ = nullptr;
+        } else {
+            float best_dist = 999999.0f;
+            Vehicle* best = nullptr;
+            for (auto& v : vehicles_) {
+                if (v->can_enter(player_.position())) {
+                    float dist = (v->position() - player_.position()).length();
+                    if (dist < best_dist) {
+                        best_dist = dist;
+                        best = v.get();
+                    }
                 }
             }
-        }
-        if (best) {
-            best->enter(&player_);
-            current_vehicle_ = best;
+            if (best) {
+                best->enter(&player_);
+                current_vehicle_ = best;
+            }
         }
     }
-}
-
-void Game::handle_shooting(float dt) {
-    if (player_.is_wasted() || player_.is_busted()) return;
-    fire_cooldown_ -= dt;
 
     // Weapon switching
+    handle_weapon_switch();
+}
+
+void Game::handle_weapon_switch() {
     if (input_.is_pressed(Action::WEAPON_NEXT)) {
         int w = static_cast<int>(current_weapon_);
         for (int i = 1; i < static_cast<int>(WeaponType::COUNT); i++) {
@@ -137,34 +139,9 @@ void Game::handle_shooting(float dt) {
             }
         }
     }
-
-    if (input_.is_down(Action::SHOOT) && fire_cooldown_ <= 0.0f && !player_.in_vehicle()) {
-        WeaponInfo info = get_weapon_info(current_weapon_);
-        int ammo_idx = static_cast<int>(current_weapon_);
-        if (ammo_[ammo_idx] > 0 || current_weapon_ == WeaponType::PISTOL) {
-            weapon_system_.fire(current_weapon_, player_.position(), player_.angle(), &player_);
-            fire_cooldown_ = 1.0f / info.fire_rate;
-
-            if (current_weapon_ != WeaponType::PISTOL && !menu_.dev().infinite_ammo) {
-                ammo_[ammo_idx]--;
-                if (ammo_[ammo_idx] <= 0) {
-                    current_weapon_ = WeaponType::PISTOL;
-                }
-            }
-
-            scare_peds_near(player_.position(), 300.0f);
-
-            // Shooting is a crime if cops are nearby
-            auto cop_positions = police_ai_.get_cop_positions();
-            for (auto& cp : cop_positions) {
-                if ((cp - player_.position()).length() < 400.0f) {
-                    wanted_system_.add_crime(std::max(1, static_cast<int>(1 * menu_.dev().wanted_gain)));
-                    break;
-                }
-            }
-        }
-    }
 }
+
+// Shooting is handled per-tick in update() since it uses is_down() for continuous fire
 
 void Game::check_pickup_collisions() {
     for (auto& pickup : spawn_manager_.pickups()) {
@@ -222,11 +199,24 @@ void Game::check_projectile_hits() {
     for (auto& proj : projectiles) {
         if (!proj.active()) continue;
 
+        // Swept hit test: check along the bullet's travel path this tick
+        // so fast bullets don't skip over targets
+        Vec2 proj_vel = proj.velocity();
+        float proj_speed = proj_vel.length();
+        Vec2 proj_dir = (proj_speed > 0.01f) ? proj_vel * (1.0f / proj_speed) : Vec2(0, 0);
+        float step = 8.0f; // check every 8 pixels along path
+        int num_steps = std::max(1, static_cast<int>(proj_speed * Timer::FIXED_DT / step));
+        float hit_radius = 16.0f;
+
         // Check vs pedestrians
         for (auto& ped : spawn_manager_.pedestrians()) {
             if (!ped.active() || ped.state() == PedState::DEAD) continue;
-            Vec2 diff = proj.position() - ped.position();
-            if (diff.length() < 10.0f) {
+            bool hit = false;
+            for (int s = 0; s <= num_steps && !hit; s++) {
+                Vec2 check_pos = proj.position() - proj_dir * (s * step);
+                if ((check_pos - ped.position()).length() < hit_radius) hit = true;
+            }
+            if (hit) {
                 int dmg = dev.one_hit_kill ? 9999 : static_cast<int>(proj.damage());
                 ped.take_damage(dmg);
                 proj.set_active(false);
@@ -238,13 +228,18 @@ void Game::check_projectile_hits() {
                 break;
             }
         }
+        if (!proj.active()) continue;  // consumed by ped hit
 
         // Check vs cops
         if (proj.owner() == &player_) {
             for (auto& cop : police_ai_.cops()) {
                 if (!cop.alive) continue;
-                Vec2 diff = proj.position() - cop.position;
-                if (diff.length() < 12.0f) {
+                bool hit = false;
+                for (int s = 0; s <= num_steps && !hit; s++) {
+                    Vec2 check_pos = proj.position() - proj_dir * (s * step);
+                    if ((check_pos - cop.position).length() < hit_radius) hit = true;
+                }
+                if (hit) {
                     int cdmg = dev.one_hit_kill ? 9999 : static_cast<int>(proj.damage());
                     cop.health -= cdmg;
                     proj.set_active(false);
@@ -258,6 +253,7 @@ void Game::check_projectile_hits() {
                 }
             }
         }
+        if (!proj.active()) continue;  // consumed by cop hit
 
         // Check vs player (cop bullets)
         if (proj.owner() != &player_ && proj.owner() != nullptr) {
@@ -485,14 +481,14 @@ void Game::run() {
         if (input_.is_pressed(Action::PAUSE) && !menu_.is_open()) {
             paused_ = true;
             menu_.open();
-            // Skip menu input this frame so the same ESC press
-            // doesn't immediately close it
         } else if (paused_ && menu_.is_open()) {
-            // Menu handles its own input (including ESC to close)
             menu_.handle_input(input_);
-            // Drain the accumulator so game doesn't jump when unpaused
             while (timer_.should_update()) {}
         } else {
+            // Process one-shot inputs ONCE per frame (before physics ticks)
+            handle_frame_input();
+
+            // Then run physics ticks (only continuous actions like movement)
             while (timer_.should_update()) {
                 update(Timer::FIXED_DT);
             }
@@ -518,8 +514,33 @@ void Game::update(float dt) {
     handle_player_death();
 
     if (!player_.is_wasted() && !player_.is_busted()) {
-        handle_enter_exit_vehicle();
-        handle_shooting(dt);
+        // Shooting (continuous fire — uses is_down)
+        fire_cooldown_ -= dt;
+        if (input_.is_down(Action::SHOOT) && fire_cooldown_ <= 0.0f && !player_.in_vehicle()) {
+            WeaponInfo info = get_weapon_info(current_weapon_);
+            int ammo_idx = static_cast<int>(current_weapon_);
+            if (ammo_[ammo_idx] > 0 || current_weapon_ == WeaponType::PISTOL) {
+                weapon_system_.fire(current_weapon_, player_.position(), player_.angle(), &player_);
+                fire_cooldown_ = 1.0f / info.fire_rate;
+
+                if (current_weapon_ != WeaponType::PISTOL && !dev.infinite_ammo) {
+                    ammo_[ammo_idx]--;
+                    if (ammo_[ammo_idx] <= 0) {
+                        current_weapon_ = WeaponType::PISTOL;
+                    }
+                }
+
+                scare_peds_near(player_.position(), 300.0f);
+
+                auto cop_positions = police_ai_.get_cop_positions();
+                for (auto& cp : cop_positions) {
+                    if ((cp - player_.position()).length() < 400.0f) {
+                        wanted_system_.add_crime(std::max(1, static_cast<int>(1 * dev.wanted_gain)));
+                        break;
+                    }
+                }
+            }
+        }
 
         if (current_vehicle_) {
             // Build drive mods from dev settings
@@ -563,10 +584,13 @@ void Game::update(float dt) {
         if (!dev.no_police) check_cop_player_collision();
     }
 
-    // Update all vehicles
+    // Update all vehicles (unoccupied ones coast and collide with map)
     for (auto& v : vehicles_) {
         if (v.get() != current_vehicle_) {
             v->update(dt);
+            if (v->velocity().length() > 1.0f) {
+                v->resolve_map_collision(map_);
+            }
         }
     }
 

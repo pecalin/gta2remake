@@ -84,6 +84,36 @@ void Vehicle::update(float dt) {
     if (driver_) {
         driver_->set_position(pos_);
         driver_->set_angle(angle_);
+    } else {
+        // No driver — coast with friction until stopped
+        float speed = state_.velocity.length();
+        if (speed > 1.0f) {
+            // Apply rolling friction and lateral grip
+            Vec2 forward = Vec2::from_angle(state_.angle);
+            Vec2 right = {-forward.y, forward.x};
+
+            float forward_speed = state_.velocity.dot(forward);
+            float lateral_speed = state_.velocity.dot(right);
+
+            // Rolling friction
+            forward_speed *= (1.0f - 1.5f * dt);
+
+            // Lateral friction (car straightens out)
+            lateral_speed *= (1.0f - 5.0f * dt);
+
+            // Kill very low speeds
+            if (std::abs(forward_speed) < 1.0f) forward_speed = 0.0f;
+            if (std::abs(lateral_speed) < 1.0f) lateral_speed = 0.0f;
+
+            state_.velocity = forward * forward_speed + right * lateral_speed;
+            state_.position += state_.velocity * dt;
+
+            pos_ = state_.position;
+            vel_ = state_.velocity;
+        } else {
+            state_.velocity = {0, 0};
+            vel_ = {0, 0};
+        }
     }
 }
 

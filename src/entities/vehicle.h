@@ -61,5 +61,5 @@ private:
     float fire_timer_ = 0.0f;
 
     SDL_Color body_color_ = {100, 100, 200, 255};
-    float enter_radius_ = 40.0f;
+    float enter_radius_ = 60.0f;
 };

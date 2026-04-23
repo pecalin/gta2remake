@@ -5,6 +5,7 @@
 #include <functional>
 
 class Input;
+class Window;
 
 // Dev settings — live-tunable values accessible from the pause menu
 struct DevSettings {
@@ -12,20 +13,20 @@ struct DevSettings {
     bool invincible = false;
     bool no_police = false;
     bool infinite_ammo = false;
-    bool no_ped_damage = false;   // peds can't hurt player
-    bool one_hit_kill = false;    // player kills everything in one hit
+    bool no_ped_damage = false;
+    bool one_hit_kill = false;
 
     // Tunable values (multipliers, 0.1 - 5.0 range)
     float car_acceleration = 1.0f;
     float car_braking = 1.0f;
     float car_turn_speed = 1.0f;
     float car_max_speed = 1.0f;
-    float car_drift = 1.0f;       // handbrake slide amount
+    float car_drift = 1.0f;
     float player_speed = 1.0f;
-    float npc_density = 1.0f;     // pedestrian population multiplier
-    float traffic_density = 1.0f; // traffic vehicle multiplier
-    float cop_aggression = 1.0f;  // how fast cops respond / how many spawn
-    float wanted_gain = 1.0f;     // crime heat multiplier
+    float npc_density = 1.0f;
+    float traffic_density = 1.0f;
+    float cop_aggression = 1.0f;
+    float wanted_gain = 1.0f;
 };
 
 enum class MenuScreen {
@@ -34,20 +35,21 @@ enum class MenuScreen {
     OPTIONS,
     CONTROLS,
     DEV_MODE,
+    RESOLUTION,
 };
 
 enum class MenuItemType {
-    ACTION,     // press enter to activate
-    TOGGLE,     // press enter to flip bool
-    SLIDER,     // left/right to adjust float value
+    ACTION,
+    TOGGLE,
+    SLIDER,
 };
 
 struct MenuItem {
     std::string label;
     MenuItemType type = MenuItemType::ACTION;
-    std::function<void()> on_select;   // for ACTION type
-    bool* toggle_value = nullptr;      // for TOGGLE type
-    float* slider_value = nullptr;     // for SLIDER type
+    std::function<void()> on_select;
+    bool* toggle_value = nullptr;
+    float* slider_value = nullptr;
     float slider_min = 0.1f;
     float slider_max = 5.0f;
     float slider_step = 0.1f;
@@ -56,7 +58,7 @@ struct MenuItem {
 
 class Menu {
 public:
-    void init(int screen_w, int screen_h);
+    void init(int screen_w, int screen_h, Window* window);
 
     bool is_open() const { return screen_ != MenuScreen::NONE; }
 
@@ -81,6 +83,7 @@ private:
     void build_options_items();
     void build_controls_items();
     void build_dev_items();
+    void build_resolution_items();
 
     void render_text_line(SDL_Renderer* renderer, const std::string& text,
                           int x, int y, int char_w, int char_h,
@@ -91,10 +94,18 @@ private:
     MenuScreen screen_ = MenuScreen::NONE;
     std::vector<MenuItem> items_;
     int selected_ = 0;
-    int scroll_offset_ = 0;   // for long menus
+    int scroll_offset_ = 0;
+
+    float repeat_delay_ = 0.35f;
+    float repeat_rate_ = 0.06f;
+    float repeat_timer_ = 0.0f;
+    int repeat_dir_ = 0;
 
     int screen_w_ = 1280;
     int screen_h_ = 720;
+
+    Window* window_ = nullptr;
+    bool fullscreen_ = false;
 
     DevSettings dev_;
 };
